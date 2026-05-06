@@ -103,6 +103,9 @@ class NullwatchClient:
             "limit": limit,
         }
         result = self._get("/v1/spans", params=params)
+        # nullwatch returns {"items": [...]} for list endpoints
+        if isinstance(result, dict) and "items" in result:
+            return result["items"]
         return result if isinstance(result, list) else []
 
     def ingest_eval(self, eval_: Eval) -> Optional[dict]:
@@ -125,11 +128,17 @@ class NullwatchClient:
             "limit": limit,
         }
         result = self._get("/v1/evals", params=params)
+        # nullwatch returns {"items": [...]} for list endpoints
+        if isinstance(result, dict) and "items" in result:
+            return result["items"]
         return result if isinstance(result, list) else []
 
     def list_runs(self, *, verdict: Optional[str] = None, limit: int = 20) -> List[dict]:
         params = {"verdict": verdict, "limit": limit}
         result = self._get("/v1/runs", params=params)
+        # nullwatch returns {"items": [...]} for list endpoints
+        if isinstance(result, dict) and "items" in result:
+            return result["items"]
         return result if isinstance(result, list) else []
 
     def get_run(self, run_id: str) -> Optional[RunSummary]:

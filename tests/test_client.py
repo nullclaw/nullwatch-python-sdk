@@ -33,11 +33,14 @@ class _MockHandler(BaseHTTPRequestHandler):
                 },
             )
         elif self.path.startswith("/v1/runs"):
-            self._respond(200, [])
+            # nullwatch returns {"items": [...]} for list endpoints
+            self._respond(200, {"items": []})
         elif self.path.startswith("/v1/spans"):
-            self._respond(200, [])
+            # nullwatch returns {"items": [...]} for list endpoints
+            self._respond(200, {"items": []})
         elif self.path.startswith("/v1/evals"):
-            self._respond(200, [])
+            # nullwatch returns {"items": [...]} for list endpoints
+            self._respond(200, {"items": []})
         else:
             self._respond(404, {"error": "not found"})
 
@@ -155,3 +158,21 @@ class TestNullwatchClient:
         # Direct non-existent endpoint
         result = client._get("/v1/nonexistent")
         assert result is None  # 404 with raise_on_error=False returns None
+
+    def test_list_spans_unwraps_items(self, mock_server):
+        """nullwatch returns {"items": [...]}, client must unwrap to a plain list."""
+        client = NullwatchClient(base_url=mock_server)
+        spans = client.list_spans(run_id="run-1")
+        assert isinstance(spans, list)
+
+    def test_list_evals_unwraps_items(self, mock_server):
+        """nullwatch returns {"items": [...]}, client must unwrap to a plain list."""
+        client = NullwatchClient(base_url=mock_server)
+        evals = client.list_evals(run_id="run-1")
+        assert isinstance(evals, list)
+
+    def test_list_runs_unwraps_items(self, mock_server):
+        """nullwatch returns {"items": [...]}, client must unwrap to a plain list."""
+        client = NullwatchClient(base_url=mock_server)
+        runs = client.list_runs()
+        assert isinstance(runs, list)
