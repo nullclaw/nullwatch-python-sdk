@@ -120,7 +120,7 @@ class HallucinationResult:
         return Eval(
             run_id=run_id,
             eval_key="rag_hallucination",
-            scorer="lettucedect-large-modernbert-en-v1",
+            scorer="lettucedetect-large-modernbert-en-v1",
             score=1.0 - self.score,
             verdict="fail" if self.is_hallucinated else "pass",
             dataset=dataset,

@@ -8,7 +8,7 @@ from nullwatch.scorers import RAGHallucinationScorer, ToolCallScorer
 
 # config
 OLLAMA_URL = "http://localhost:11434"
-MODEL = "qwen2.5-coder:7b"
+MODEL = "qwen3"
 NULLWATCH_URL = "http://127.0.0.1:7710"
 RUN_ID = f"live-demo-{int(time.time())}"
 
@@ -90,28 +90,6 @@ TOOLS_SCHEMA = [
     },
 ]
 
-# nullwatch-py scorer schemas (internal format)
-TOOL_SCORER_TOOLS = [
-    {
-        "name": "search_docs",
-        "parameters": {
-            "query": {"type": "string", "required": True},
-            "max_results": {"type": "integer", "required": False, "minimum": 1, "maximum": 20},
-        },
-    },
-    {
-        "name": "get_version",
-        "parameters": {
-            "language": {
-                "type": "string",
-                "required": True,
-                "enum": ["python", "zig", "rust", "go"],
-            },
-        },
-    },
-]
-
-
 def main():
     # preflight checks
     print("🔍 Checking services...")
@@ -129,7 +107,7 @@ def main():
         return
 
     rag_scorer = RAGHallucinationScorer()
-    tool_scorer = ToolCallScorer(tools=TOOL_SCORER_TOOLS)
+    tool_scorer = ToolCallScorer(tools=TOOLS_SCHEMA)
 
     # PART 1: RAG hallucination detection
     section("PART 1: RAG Hallucination Detection")

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Dict, List, Optional, Union
 
 from ..models import Eval
@@ -65,6 +66,161 @@ def normalize_tool_call(call: dict) -> dict:
     return call
 
 
+def _extract_argument_parse_error(call: dict) -> Optional[str]:
+    """Return a validation error if function.arguments contains malformed JSON."""
+    if "function" not in call:
+        return None
+    raw_args = call["function"].get("arguments", {})
+    if not isinstance(raw_args, str):
+        return None
+    try:
+        json.loads(raw_args)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return f"Malformed JSON in tool arguments: {exc}"
+    return None
+
+
+def _normalize_tool_schema(tool_schema: dict) -> dict:
+    """Normalize internal or OpenAI-style tool schemas into a JSON Schema object."""
+    if "function" in tool_schema:
+        tool_schema = tool_schema["function"]
+
+    name = tool_schema["name"]
+    parameters = tool_schema.get("parameters", {})
+
+    if isinstance(parameters, dict) and parameters.get("type") == "object":
+        normalized = dict(parameters)
+        normalized.setdefault("properties", {})
+        return {"name": name, "schema": normalized}
+
+    properties: Dict[str, dict] = {}
+    required: List[str] = []
+    for param_name, param_spec in parameters.items():
+        if isinstance(param_spec, dict):
+            spec_copy = dict(param_spec)
+        else:
+            spec_copy = {}
+        if spec_copy.pop("required", False):
+            required.append(param_name)
+        properties[param_name] = spec_copy
+
+    return {
+        "name": name,
+        "schema": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        },
+    }
+
+
+def _format_unknown_key_issue(path: str, key: str, known_keys: List[str]) -> str:
+    close = [candidate for candidate in known_keys if _levenshtein(key, candidate) <= 2]
+    hint = f" (did you mean: {close})?" if close else ""
+    if path:
+        return f"Unknown field '{path}.{key}'{hint}"
+    return f"Unknown argument '{key}'{hint}"
+
+
+def _format_missing_key_issue(path: str, key: str) -> str:
+    if path:
+        return f"Missing required field '{path}.{key}'"
+    return f"Missing required argument '{key}'"
+
+
+def _format_value_label(path: str) -> str:
+    if "." in path or "[" in path:
+        return f"Field '{path}'"
+    return f"Argument '{path}'"
+
+
+def _validate_schema_value(value, schema: dict, path: str, issues: List[str]) -> None:
+    schema_type = schema.get("type")
+    if isinstance(schema_type, str):
+        schema_type = schema_type.lower()
+
+    if schema_type in ("object", "dict") or "properties" in schema or "required" in schema:
+        if not isinstance(value, dict):
+            actual = type(value).__name__
+            issues.append(f"{_format_value_label(path)} expected type 'object', got '{actual}'")
+            return
+
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        additional_properties = schema.get("additionalProperties", False)
+
+        for key in required:
+            if key not in value:
+                issues.append(_format_missing_key_issue(path, key))
+
+        for key, child_value in value.items():
+            if key not in properties:
+                if additional_properties is False:
+                    issues.append(_format_unknown_key_issue(path, key, list(properties.keys())))
+                continue
+            child_path = f"{path}.{key}" if path else key
+            _validate_schema_value(child_value, properties[key], child_path, issues)
+        return
+
+    if schema_type in ("array", "list") or "items" in schema:
+        if not isinstance(value, list):
+            actual = type(value).__name__
+            issues.append(f"{_format_value_label(path)} expected type 'array', got '{actual}'")
+            return
+
+        min_items = schema.get("minItems")
+        max_items = schema.get("maxItems")
+        if min_items is not None and len(value) < min_items:
+            issues.append(f"{_format_value_label(path)} has {len(value)} item(s), below minimum {min_items}")
+        if max_items is not None and len(value) > max_items:
+            issues.append(f"{_format_value_label(path)} has {len(value)} item(s), exceeds maximum {max_items}")
+
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for idx, item in enumerate(value):
+                _validate_schema_value(item, item_schema, f"{path}[{idx}]", issues)
+        return
+
+    if schema_type:
+        expected_type = _PYTHON_TYPE_MAP.get(schema_type)
+        is_bool_value = isinstance(value, bool)
+        is_bool_schema = schema_type in ("boolean", "bool")
+        type_mismatch = expected_type and not isinstance(value, expected_type)
+        bool_as_int = is_bool_value and not is_bool_schema
+        if type_mismatch or bool_as_int:
+            actual = type(value).__name__
+            issues.append(f"{_format_value_label(path)} expected type '{schema_type}', got '{actual}'")
+            return
+
+    allowed_values = schema.get("enum")
+    if allowed_values is not None and value not in allowed_values:
+        issues.append(f"{_format_value_label(path)} value {value!r} not in allowed values: {allowed_values}")
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        if minimum is not None and value < minimum:
+            issues.append(f"{_format_value_label(path)} value {value} is below minimum {minimum}")
+        if maximum is not None and value > maximum:
+            issues.append(f"{_format_value_label(path)} value {value} exceeds maximum {maximum}")
+
+    if isinstance(value, str):
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+        pattern = schema.get("pattern")
+        if min_length is not None and len(value) < min_length:
+            issues.append(
+                f"{_format_value_label(path)} length {len(value)} is below minimum {min_length}"
+            )
+        if max_length is not None and len(value) > max_length:
+            issues.append(
+                f"{_format_value_label(path)} length {len(value)} exceeds maximum {max_length}"
+            )
+        if pattern is not None and re.search(pattern, value) is None:
+            issues.append(f"{_format_value_label(path)} value {value!r} does not match pattern {pattern!r}")
+
+
 class ToolCallScorer(BaseScorer):
     """
     Validates LLM-generated tool calls against a JSON-schema-like spec.
@@ -83,7 +239,8 @@ class ToolCallScorer(BaseScorer):
     def __init__(self, tools: Optional[List[dict]] = None, dataset: Optional[str] = None):
         self._tools: Dict[str, dict] = {}
         for t in tools or []:
-            self._tools[t["name"]] = t
+            normalized = _normalize_tool_schema(t)
+            self._tools[normalized["name"]] = normalized
         self.dataset = dataset
 
     @property
@@ -96,7 +253,8 @@ class ToolCallScorer(BaseScorer):
 
     def register_tool(self, tool_schema: dict) -> None:
         """Register a tool schema. Can be called after construction."""
-        self._tools[tool_schema["name"]] = tool_schema
+        normalized = _normalize_tool_schema(tool_schema)
+        self._tools[normalized["name"]] = normalized
 
     def validate(self, tool_call: dict) -> tuple[bool, List[str]]:
         """
@@ -108,6 +266,9 @@ class ToolCallScorer(BaseScorer):
         issues: List[str] = []
         name = call.get("name", "")
         args = call.get("arguments", {}) or {}
+        parse_error = _extract_argument_parse_error(tool_call)
+        if parse_error:
+            issues.append(parse_error)
 
         # --- 1. Tool name must be registered ---
         if name not in self._tools:
@@ -116,61 +277,8 @@ class ToolCallScorer(BaseScorer):
             issues.append(f"Unknown tool '{name}'{hint}. Known tools: {list(self._tools.keys())}")
             return False, issues
 
-        params = self._tools[name].get("parameters", {})
-
-        # --- 2. Required arguments must be present ---
-        for param_name, param_spec in params.items():
-            if isinstance(param_spec, dict) and param_spec.get("required", False):
-                if param_name not in args:
-                    issues.append(f"Missing required argument '{param_name}'")
-
-        # --- 3. Unknown argument names (with typo hints) ---
-        for arg_name in args:
-            if arg_name not in params:
-                close = [p for p in params if _levenshtein(arg_name, p) <= 2]
-                hint = f" (did you mean: {close})?" if close else ""
-                issues.append(f"Unknown argument '{arg_name}'{hint}")
-
-        # --- 4. Type, enum, and range validation ---
-        for arg_name, arg_value in args.items():
-            if arg_name not in params:
-                continue
-            param_spec = params[arg_name]
-            if not isinstance(param_spec, dict):
-                continue
-
-            # Type check
-            # Note: bool is a subclass of int in Python, so we must check it explicitly
-            # before checking for int/number to avoid False/True passing as integer.
-            expected_type_str = param_spec.get("type")
-            if expected_type_str:
-                expected_type = _PYTHON_TYPE_MAP.get(expected_type_str.lower())
-                is_bool_value = isinstance(arg_value, bool)
-                is_bool_schema = expected_type_str.lower() in ("boolean", "bool")
-                type_mismatch = expected_type and not isinstance(arg_value, expected_type)
-                bool_as_int = is_bool_value and not is_bool_schema  # True/False passed as integer
-                if type_mismatch or bool_as_int:
-                    actual = type(arg_value).__name__
-                    issues.append(
-                        f"Argument '{arg_name}' expected type '{expected_type_str}', got '{actual}'"
-                    )
-                    continue  # skip further checks if type is already wrong
-
-            # Enum check
-            allowed_values = param_spec.get("enum")
-            if allowed_values is not None and arg_value not in allowed_values:
-                issues.append(
-                    f"Argument '{arg_name}' value {arg_value!r} not in allowed values: {allowed_values}"
-                )
-
-            # Numeric range checks (guard against bool, which is a subclass of int)
-            if isinstance(arg_value, (int, float)) and not isinstance(arg_value, bool):
-                minimum = param_spec.get("minimum")
-                maximum = param_spec.get("maximum")
-                if minimum is not None and arg_value < minimum:
-                    issues.append(f"Argument '{arg_name}' value {arg_value} is below minimum {minimum}")
-                if maximum is not None and arg_value > maximum:
-                    issues.append(f"Argument '{arg_name}' value {arg_value} exceeds maximum {maximum}")
+        schema = self._tools[name]["schema"]
+        _validate_schema_value(args, schema, "", issues)
 
         return len(issues) == 0, issues
 

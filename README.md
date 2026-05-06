@@ -296,6 +296,11 @@ does not require an ML model.
 
 Compact Nullwatch schema:
 
+You can pass either:
+
+- the compact `nullwatch-py` schema format shown below, or
+- the same OpenAI-style `tools=[...]` JSON schema you send to the model
+
 ```python
 from nullwatch.scorers import ToolCallScorer
 

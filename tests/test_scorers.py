@@ -37,6 +37,51 @@ TOOLS = [
     },
 ]
 
+OPENAI_STYLE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_catalog",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filters": {
+                        "type": "object",
+                        "properties": {
+                            "language": {"type": "string", "enum": ["en", "ru"]},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 5},
+                        },
+                        "required": ["language"],
+                        "additionalProperties": False,
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                    },
+                },
+                "required": ["filters"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
 
 class TestToolCallScorer:
     def setup_method(self):
@@ -230,6 +275,38 @@ class TestToolCallScorer:
         assert eval_.verdict == "fail"
         assert "query" in eval_.notes
 
+    def test_openai_tool_schema_supported_directly(self):
+        import json
+
+        scorer = ToolCallScorer(tools=OPENAI_STYLE_TOOLS)
+        eval_ = scorer.score(
+            run_id="run-1",
+            tool_call={
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "arguments": json.dumps({"query": "zig lang", "max_results": 3}),
+                },
+            },
+        )
+        assert eval_.verdict == "pass"
+        assert eval_.score == 1.0
+
+    def test_malformed_json_arguments_report_parse_error(self):
+        scorer = ToolCallScorer(tools=OPENAI_STYLE_TOOLS)
+        eval_ = scorer.score(
+            run_id="run-1",
+            tool_call={
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "arguments": "{broken json",
+                },
+            },
+        )
+        assert eval_.verdict == "fail"
+        assert "Malformed JSON in tool arguments" in eval_.notes
+
     # --- batch scoring ---
 
     def test_multiple_calls_partial_valid(self):
@@ -326,6 +403,37 @@ class TestToolCallScorer:
         # True == 1 as int, but type is bool not int
         assert eval_.verdict == "fail"
         assert "expected type 'integer'" in eval_.notes
+
+    def test_nested_object_validation(self):
+        scorer = ToolCallScorer(tools=OPENAI_STYLE_TOOLS)
+        eval_ = scorer.score(
+            run_id="run-1",
+            tool_call={
+                "name": "search_catalog",
+                "arguments": {
+                    "filters": {"lang": "en"},
+                    "paths": ["docs/readme.md"],
+                },
+            },
+        )
+        assert eval_.verdict == "fail"
+        assert "Missing required field 'filters.language'" in eval_.notes
+        assert "Unknown field 'filters.lang'" in eval_.notes
+
+    def test_array_item_validation(self):
+        scorer = ToolCallScorer(tools=OPENAI_STYLE_TOOLS)
+        eval_ = scorer.score(
+            run_id="run-1",
+            tool_call={
+                "name": "search_catalog",
+                "arguments": {
+                    "filters": {"language": "ru"},
+                    "paths": ["docs/readme.md", 5],
+                },
+            },
+        )
+        assert eval_.verdict == "fail"
+        assert "paths[1]" in eval_.notes
 
 
 class TestNormalizeToolCall:

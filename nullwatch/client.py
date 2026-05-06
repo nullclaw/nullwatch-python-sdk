@@ -142,7 +142,12 @@ class NullwatchClient:
         return result if isinstance(result, list) else []
 
     def get_run(self, run_id: str) -> Optional[RunSummary]:
-        data = self._get(f"/v1/runs/{run_id}")
+        try:
+            data = self._get(f"/v1/runs/{run_id}")
+        except NullwatchError as e:
+            if e.status == 404:
+                return None
+            raise
         if not data:
             return None
         summary_data = data.get("summary", data)

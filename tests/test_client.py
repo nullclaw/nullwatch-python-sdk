@@ -21,6 +21,9 @@ class _MockHandler(BaseHTTPRequestHandler):
             self._respond(200, {"status": "ok"})
         elif self.path.startswith("/v1/runs/"):
             run_id = self.path.split("/")[-1]
+            if run_id == "missing-run":
+                self._respond(404, {"error": "not_found", "message": "Run not found"})
+                return
             self._respond(
                 200,
                 {
@@ -144,6 +147,10 @@ class TestNullwatchClient:
         assert summary.run_id == "run-42"
         assert summary.span_count == 2
         assert summary.verdict == "pass"
+
+    def test_get_run_missing_returns_none(self, mock_server):
+        client = NullwatchClient(base_url=mock_server)
+        assert client.get_run("missing-run") is None
 
     def test_default_source_applied(self, mock_server):
         client = NullwatchClient(base_url=mock_server, default_source="my-app")
