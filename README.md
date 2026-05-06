@@ -1,48 +1,30 @@
 # Nullwatch Python SDK
 
-Python client for instrumenting LLM and agent runs with spans, evaluations, and
-quality signals.
+Python SDK for instrumenting LLM and agent applications with traces, spans,
+evals, scorers, and run queries backed by
+[`nullwatch`](https://github.com/nullclaw/nullwatch).
 
-Nullwatch is designed for local-first observability. The SDK keeps the public
-API small: create spans around work, ingest explicit evals, run optional
-scorers, and query run summaries back from a Nullwatch service.
+`nullwatch-py` is the Python entry point for Nullwatch observability. It records
+what happened inside a run, attaches quality signals to that run, and makes the
+results queryable for dashboards, CI checks, local debugging, regression suites,
+and production monitoring.
 
 By default, `NullwatchClient()` connects to `http://127.0.0.1:7710`.
 
-## Status
+## What It Does
 
-This repository is being initialized. The README describes the intended public
-API, package shape, and design contract for the Python SDK. Implementation
-should follow this surface without turning the SDK into a second `nullwatch`
-server or a UI layer.
+`nullwatch-py` covers the Python side of the Nullwatch workflow:
 
-## Repository Scope
-
-This repository is the Python SDK home for `nullwatch`. Its job is to make
-Python applications, agent runtimes, RAG services, evaluation scripts, and test
-suites easy to connect to the `nullwatch` HTTP API.
-
-The SDK should cover:
-
-- span instrumentation for LLM calls, tool calls, retrieval, parsing, workflow
-  steps, retries, and custom operations
-- eval ingestion for human review, deterministic checks, LLM judges, regression
-  gates, RAG hallucination checks, and tool-call validation
-- run queries for summaries, spans, evals, pass/fail status, latency, token
-  usage, cost, and error inspection
-- ergonomic Python APIs: context managers, decorators, explicit model objects,
-  buffered ingestion, and test helpers
-- optional scorer packages that can add heavier dependencies without bloating
-  the core client
-
-This repository should not contain:
-
-- a `nullwatch` server implementation
-- dashboard or UI code
-- durable storage engines
-- queue ownership, orchestration policy, or scheduling logic
-- provider SDK wrappers that hide the underlying OpenAI, Anthropic, or local
-  model clients
+- records spans for LLM calls, retrieval, parsing, tool calls, workflow steps,
+  retries, fallbacks, and custom application operations
+- ingests evals from deterministic checks, human review, LLM judges, test
+  suites, RAG hallucination detection, and tool-call validation
+- queries runs, spans, evals, summaries, verdicts, costs, latency, token usage,
+  and error status from the Nullwatch service
+- provides ergonomic Python APIs: context managers, decorators, explicit data
+  models, buffered ingestion, test helpers, and a small CLI
+- keeps heavyweight scorer dependencies optional so the core client remains
+  small and usable in normal application code
 
 The boundary is simple: Python code produces telemetry and evals; `nullwatch`
 stores, summarizes, and exposes them.
@@ -61,9 +43,13 @@ Client plus RAG hallucination detection:
 pip install "nullwatch-py[rag]"
 ```
 
-## Quick Start
+Development tools:
 
-Target API:
+```bash
+pip install "nullwatch-py[dev]"
+```
+
+## Quick Start
 
 ```python
 from nullwatch import NullwatchClient
@@ -99,7 +85,8 @@ client.ingest_eval(
 ### Runs
 
 A run is the top-level unit of work. Use the same `run_id` for every span and
-eval that belongs to one agent execution, workflow step, request, or test case.
+eval that belongs to one agent execution, workflow step, HTTP request, CLI run,
+background job, dataset item, or test case.
 
 ```python
 run_id = "run-123"
@@ -107,9 +94,16 @@ run_id = "run-123"
 
 ### Spans
 
-Spans represent timed work inside a run: an LLM call, retrieval step, tool
-execution, parser pass, reranker request, or any other operation worth
-measuring.
+Spans represent timed work inside a run:
+
+- model calls
+- tool invocations
+- retrieval and reranking
+- memory lookups
+- parser passes
+- workflow steps
+- retries and fallback branches
+- custom application operations
 
 The context manager starts the timer on entry, finishes it on exit, captures
 errors, and ingests the span automatically.
@@ -122,21 +116,23 @@ with client.span("run-123", "llm.call", model="gpt-4o") as span:
     span.cost_usd = response.usage.total_cost
 ```
 
-Use stable span names. Good names describe the operation, not one specific
-implementation detail:
+Stable operation names make dashboards and regression queries easier to read:
 
 ```text
 llm.call
 retriever.search
+retriever.rerank
 tool.execute
 workflow.step
 parser.extract_json
+memory.lookup
 ```
 
 ### Evals
 
 Evals attach quality signals to a run. They can come from deterministic checks,
-human review, an LLM judge, a RAG hallucination detector, or a custom scorer.
+human review, an LLM judge, a RAG hallucination detector, a schema validator, a
+dataset regression suite, or a custom scorer.
 
 ```python
 from nullwatch import Eval
@@ -161,13 +157,14 @@ eval_key    What is being measured, for example "helpfulness".
 scorer      The scorer or system that produced the result.
 score       Numeric score when available.
 verdict     "pass", "fail", or "warn".
+dataset     Dataset, environment, or regression suite name.
 notes       Human-readable details for debugging.
 metadata    Structured details for downstream analysis.
 ```
 
-## Client Surface
+## Client API
 
-The SDK should cover the common lifecycle for Python agents and RAG services:
+The client covers the common lifecycle for Python agents and RAG services:
 
 ```python
 client = NullwatchClient()
@@ -188,23 +185,23 @@ client.flush()
 client.close()
 ```
 
-The default client should send data immediately. Buffered mode should batch span
-ingest through `/v1/spans/bulk` and flush on context-manager exit:
+The default client sends data immediately. Buffered mode batches span ingest
+through `/v1/spans/bulk` and flushes on context-manager exit:
 
 ```python
 with NullwatchClient(buffered=True, flush_at=100) as client:
     ...
 ```
 
-Core client capabilities:
+Core capabilities:
 
 ```text
 Connection
   base URL, API token, timeout, retry policy, health check, capabilities query
 
 Ingestion
-  single span, bulk spans, single eval, future bulk evals, buffered mode,
-  explicit flush, graceful close
+  single span, bulk spans, single eval, buffered mode, explicit flush,
+  graceful close
 
 Queries
   run detail, run list, span list, eval list, summaries and filtered views
@@ -223,8 +220,7 @@ Testing
 
 ## Decorators
 
-In addition to explicit span blocks, the SDK should support decorators for code
-that is already organized into functions.
+Use decorators when application code is already organized into functions.
 
 ```python
 @client.trace("retriever.search")
@@ -232,7 +228,7 @@ def search_docs(run_id: str, query: str) -> list[str]:
     return retriever.search(query)
 ```
 
-Async functions should be supported with the same semantics:
+Async functions use the same model:
 
 ```python
 @client.atrace("llm.call")
@@ -240,16 +236,16 @@ async def call_model(run_id: str, prompt: str) -> str:
     return await model.generate(prompt)
 ```
 
-The decorator should extract `run_id` from a keyword argument by default and
-fall back to a generated run ID only when no run ID is available.
+The decorator reads `run_id` from keyword arguments by default and can fall back
+to a generated run ID when no run ID is available.
 
 ## RAG Hallucination Detection
 
-`RAGHallucinationScorer` is intended for retrieval-augmented generation
-workflows. It compares an answer against retrieved context and returns an eval
-that marks unsupported answer spans.
+`RAGHallucinationScorer` is built for retrieval-augmented generation workflows.
+It compares an answer against retrieved context and returns an eval that marks
+unsupported answer spans.
 
-The `rag` extra is designed around
+The `rag` extra uses
 [LettuceDetect](https://pypi.org/project/lettucedetect/), a ModernBERT-based
 token classifier for RAG hallucination detection. The large English model is
 published as
@@ -276,46 +272,29 @@ print(eval_.verdict)  # "fail"
 print(eval_.notes)    # 'Hallucinated spans detected: "80 million" (conf=0.97)'
 ```
 
-The scorer should report enough detail to debug the failure without replaying
-the whole request:
+RAG scorer output:
 
 ```text
 eval_key: rag_hallucination
 scorer:   lettucedetect
-verdict:  fail
+verdict:  pass | fail | warn
+score:    confidence-adjusted support score
 notes:    unsupported spans and confidence
-metadata: spans, offsets, confidence, model name
+metadata: spans, offsets, confidence, model name, threshold
 ```
 
-The scorer should stay optional and dependency-isolated. Importing
-`nullwatch` or using the core client must not import PyTorch, Transformers, or
-LettuceDetect. Those dependencies belong behind the `rag` extra.
-
-RAG scorer capabilities:
-
-```text
-Input
-  run_id, contexts, question, answer, optional dataset, optional metadata
-
-Output
-  Eval with eval_key="rag_hallucination", verdict, score, notes, metadata
-
-Metadata
-  hallucinated spans, character offsets, confidence, model name, threshold
-
-Behavior
-  pass when no unsupported spans are found
-  fail when unsupported spans exceed threshold
-  warn when the detector cannot produce a reliable result
-```
+The scorer is optional and dependency-isolated. Importing `nullwatch` or using
+the core client does not import PyTorch, Transformers, or LettuceDetect. Those
+dependencies live behind the `rag` extra.
 
 ## Tool-Call Validity
 
 `ToolCallScorer` validates LLM-generated tool calls against a declared tool
 schema. It catches fabricated tool names, misspelled arguments, missing required
-fields, and wrong argument types. It does not require an ML model.
+fields, malformed JSON arguments, enum violations, and wrong argument types. It
+does not require an ML model.
 
-You can pass the compact Nullwatch schema:
+Compact Nullwatch schema:
 
 ```python
 from nullwatch.scorers import ToolCallScorer
@@ -344,12 +323,10 @@ print(eval_.verdict)  # "fail"
 print(eval_.notes)    # "Unknown argument 'querY' (did you mean: ['query'])?"
 ```
 
-You can also pass the same OpenAI-style `tools=[...]` JSON schema you send to
-the model. This keeps validation close to production behavior and avoids a
-second source of truth.
+The same scorer also accepts OpenAI-style `tools=[...]` JSON schema, so
+applications can validate against the exact schema sent to the model.
 
-The scorer should return one eval per validation call, with structured metadata
-that is easy to inspect in a UI:
+Tool-call scorer output:
 
 ```text
 eval_key: tool_call_validity
@@ -360,32 +337,21 @@ notes:    concise failure summary
 metadata: unknown_tools, missing_args, unknown_args, type_errors
 ```
 
-Tool-call validation should support:
+Supported inputs:
 
 ```text
-Tool schemas
-  compact Nullwatch schema
-  OpenAI-style tools JSON schema
-
-Tool-call shapes
-  one tool call
-  multiple tool calls
-  dict-like provider responses
-  response objects with tool_calls attributes
-
-Checks
-  unknown tool name
-  missing required argument
-  unknown argument with suggestions
-  type mismatch
-  malformed JSON arguments
-  array/object/enum handling where schema provides enough detail
+one tool call
+multiple tool calls
+dict-like provider responses
+response objects with tool_calls attributes
+compact Nullwatch schema
+OpenAI-style tools JSON schema
 ```
 
 ## Provider Helpers
 
-Provider helpers should make common LLM usage cheap to instrument without
-coupling the SDK to a provider SDK.
+Provider helpers make common LLM usage cheap to instrument without coupling the
+SDK to a provider SDK.
 
 ```python
 with client.span("run-123", "llm.call", model="gpt-4o") as span:
@@ -402,14 +368,13 @@ record_tokens(input_tokens=..., output_tokens=...)
 record_cost(cost_usd=...)
 ```
 
-These helpers should be best-effort adapters over response objects and dicts.
-They should never require OpenAI, Anthropic, or other provider packages at import
-time.
+These helpers are best-effort adapters over response objects and dictionaries.
+They do not require OpenAI, Anthropic, or other provider packages at import time.
 
 ## Querying Runs
 
-Use query methods when you need to build dashboards, inspect failures, or
-export slices of evaluation data.
+Use query methods to build dashboards, inspect failures, export evaluation data,
+or run regression checks in CI.
 
 ```python
 summary = client.get_run("run-123")
@@ -423,7 +388,7 @@ failed_rag_evals = client.list_evals(
 error_spans = client.list_spans(status="error")
 ```
 
-Expected query surface:
+Query surface:
 
 ```text
 get_run(run_id)
@@ -432,7 +397,7 @@ list_spans(run_id=None, status=None, name=None)
 list_evals(run_id=None, verdict=None, eval_key=None, scorer=None)
 ```
 
-Filtering should mirror the `nullwatch` service where possible:
+Filters mirror the `nullwatch` service:
 
 ```text
 Runs
@@ -456,7 +421,7 @@ client = NullwatchClient(
 )
 ```
 
-Configuration should also be readable from environment variables:
+Environment variables:
 
 ```bash
 export NULLWATCH_URL=http://127.0.0.1:7710
@@ -465,8 +430,8 @@ export NULLWATCH_API_KEY=...
 
 ## Testing Utilities
 
-The SDK should include test helpers so application code can assert telemetry
-without running a real `nullwatch` server.
+Test helpers let application code assert telemetry without running a real
+`nullwatch` server.
 
 ```python
 from nullwatch.testing import MemoryTransport
@@ -492,8 +457,7 @@ assert_eval_recorded(...)
 
 ## Redaction
 
-Production users need a safe place to remove secrets and sensitive payloads
-before ingest.
+Production users can remove secrets and sensitive payloads before ingest.
 
 ```python
 client = NullwatchClient(
@@ -501,8 +465,8 @@ client = NullwatchClient(
 )
 ```
 
-Redaction should run immediately before transport serialization for spans,
-evals, and query metadata. It should be deterministic, local, and opt-in.
+Redaction runs immediately before transport serialization for spans, evals, and
+query metadata. It is deterministic, local, and opt-in.
 
 Recommended redaction targets:
 
@@ -516,7 +480,7 @@ provider response payloads before they are copied into metadata
 
 ## CLI
 
-A small SDK CLI is useful for debugging and shell scripts:
+The SDK includes a small CLI for debugging and shell scripts:
 
 ```bash
 nullwatch-py ping
@@ -525,12 +489,12 @@ nullwatch-py ingest-eval eval.json
 nullwatch-py run run-123
 ```
 
-This CLI should remain a convenience wrapper over the Python client. Operational
-server commands belong to the `nullwatch` Zig binary.
+This CLI is a convenience wrapper over the Python client. Operational server
+commands belong to the `nullwatch` Zig binary.
 
 ## Architecture
 
-The SDK should stay small and layered:
+The package is small and layered:
 
 ```text
 nullwatch/
@@ -558,8 +522,7 @@ Keep network ingestion explicit except for span context manager exit.
 Keep deterministic validators free of ML dependencies.
 ```
 
-The core package should depend only on the Python standard library. Optional
-extras can add heavier dependencies:
+Package extras:
 
 ```text
 nullwatch-py          core client, models, transport, tool-call scorer
@@ -569,7 +532,7 @@ nullwatch-py[dev]    tests, Ruff, type checking, build tooling
 
 ## Compatibility With Nullwatch
 
-The SDK should map directly to the `nullwatch` service contract:
+The SDK maps directly to the `nullwatch` service contract:
 
 ```text
 POST /v1/spans        ingest one span
@@ -583,21 +546,9 @@ GET  /v1/capabilities inspect server capabilities
 GET  /health          health check
 ```
 
-OTLP ingestion stays on the `nullwatch` service side. The Python SDK may expose
-helpers for mapping Python spans into the native Nullwatch span model, but it
-should not become an OpenTelemetry collector.
-
-## Documentation Goals
-
-The README should remain the high-level product contract. Once implementation
-starts, detailed docs can split into:
-
-```text
-docs/api.md           public Python API reference
-docs/scorers.md       scorer behavior and output formats
-docs/testing.md       MemoryTransport and assertion helpers
-docs/integrations.md  provider-specific usage examples
-```
+OTLP ingestion stays on the `nullwatch` service side. The Python SDK provides
+helpers for mapping Python spans into the native Nullwatch span model, but it is
+not an OpenTelemetry collector.
 
 ## Development
 
@@ -607,6 +558,6 @@ make lint
 make test
 ```
 
-`make lint` runs Ruff and should report zero errors. `make test` should run
-locally without external services; scorer tests should use fixtures or mocked
-model outputs unless an integration test is explicitly requested.
+`make lint` runs Ruff and reports zero errors. `make test` runs locally without
+external services; scorer tests use fixtures or mocked model outputs unless an
+integration test is explicitly requested.
