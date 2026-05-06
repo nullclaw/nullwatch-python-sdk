@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional
+import json
+from typing import Dict, List, Optional, Union
 
 from ..models import Eval
 from .base import BaseScorer
@@ -20,12 +21,63 @@ _PYTHON_TYPE_MAP = {
 }
 
 
+def _levenshtein(a: str, b: str) -> int:
+    if len(a) < len(b):
+        a, b = b, a
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (ca != cb)))
+        prev = curr
+    return prev[-1]
+
+
+def normalize_tool_call(call: dict) -> dict:
+    """
+    Normalize various LLM tool call formats into internal format.
+
+    Internal format: {"name": str, "arguments": dict}
+
+    Handles:
+    - OpenAI:    {"type": "function", "function": {"name": ..., "arguments": "<json str>"}}
+    - Anthropic: {"type": "tool_use", "name": ..., "input": {...}}
+    - Internal:  {"name": ..., "arguments": {...}}  (pass-through)
+    """
+    # OpenAI function call format
+    if "function" in call:
+        fn = call["function"]
+        raw_args = fn.get("arguments", {})
+        if isinstance(raw_args, str):
+            try:
+                raw_args = json.loads(raw_args)
+            except (json.JSONDecodeError, ValueError):
+                raw_args = {}
+        return {"name": fn.get("name", ""), "arguments": raw_args}
+
+    # Anthropic tool_use format
+    if call.get("type") == "tool_use":
+        return {"name": call.get("name", ""), "arguments": call.get("input", {})}
+
+    # Internal / already-normalized format
+    return call
+
+
 class ToolCallScorer(BaseScorer):
     """
-    Validates LLM-generated tool calls against a schema.
+    Validates LLM-generated tool calls against a JSON-schema-like spec.
 
-    Catches fabricated tool names, misspelled argument names, and wrong types.
-    No ML model needed.
+    Checks performed:
+    - Tool name exists in registered tools (with Levenshtein typo hints)
+    - All required arguments are present
+    - No unknown argument names (with Levenshtein-based typo hints)
+    - Argument types match the schema ("string", "integer", "boolean", etc.)
+    - Enum values are valid when "enum" is specified
+    - Numeric values satisfy "minimum" / "maximum" constraints when specified
+
+    Accepts tool calls in OpenAI, Anthropic, or internal format automatically.
     """
 
     def __init__(self, tools: Optional[List[dict]] = None, dataset: Optional[str] = None):
@@ -43,43 +95,82 @@ class ToolCallScorer(BaseScorer):
         return "schema-validator"
 
     def register_tool(self, tool_schema: dict) -> None:
+        """Register a tool schema. Can be called after construction."""
         self._tools[tool_schema["name"]] = tool_schema
 
     def validate(self, tool_call: dict) -> tuple[bool, List[str]]:
-        issues: List[str] = []
-        name = tool_call.get("name", "")
-        args = tool_call.get("arguments", {}) or {}
+        """
+        Validate a single tool call (any supported format).
 
+        Returns (is_valid, list_of_issue_strings).
+        """
+        call = normalize_tool_call(tool_call)
+        issues: List[str] = []
+        name = call.get("name", "")
+        args = call.get("arguments", {}) or {}
+
+        # --- 1. Tool name must be registered ---
         if name not in self._tools:
-            issues.append(f"Unknown tool '{name}'. Known tools: {list(self._tools.keys())}")
+            close = [t for t in self._tools if _levenshtein(name, t) <= 2]
+            hint = f" (did you mean: {close})?" if close else ""
+            issues.append(f"Unknown tool '{name}'{hint}. Known tools: {list(self._tools.keys())}")
             return False, issues
 
         params = self._tools[name].get("parameters", {})
 
+        # --- 2. Required arguments must be present ---
         for param_name, param_spec in params.items():
             if isinstance(param_spec, dict) and param_spec.get("required", False):
                 if param_name not in args:
                     issues.append(f"Missing required argument '{param_name}'")
 
+        # --- 3. Unknown argument names (with typo hints) ---
         for arg_name in args:
             if arg_name not in params:
                 close = [p for p in params if _levenshtein(arg_name, p) <= 2]
                 hint = f" (did you mean: {close})?" if close else ""
                 issues.append(f"Unknown argument '{arg_name}'{hint}")
 
+        # --- 4. Type, enum, and range validation ---
         for arg_name, arg_value in args.items():
             if arg_name not in params:
                 continue
             param_spec = params[arg_name]
             if not isinstance(param_spec, dict):
                 continue
+
+            # Type check
+            # Note: bool is a subclass of int in Python, so we must check it explicitly
+            # before checking for int/number to avoid False/True passing as integer.
             expected_type_str = param_spec.get("type")
-            if not expected_type_str:
-                continue
-            expected_type = _PYTHON_TYPE_MAP.get(expected_type_str.lower())
-            if expected_type and not isinstance(arg_value, expected_type):
-                actual = type(arg_value).__name__
-                issues.append(f"Argument '{arg_name}' expected '{expected_type_str}', got '{actual}'")
+            if expected_type_str:
+                expected_type = _PYTHON_TYPE_MAP.get(expected_type_str.lower())
+                is_bool_value = isinstance(arg_value, bool)
+                is_bool_schema = expected_type_str.lower() in ("boolean", "bool")
+                type_mismatch = expected_type and not isinstance(arg_value, expected_type)
+                bool_as_int = is_bool_value and not is_bool_schema  # True/False passed as integer
+                if type_mismatch or bool_as_int:
+                    actual = type(arg_value).__name__
+                    issues.append(
+                        f"Argument '{arg_name}' expected type '{expected_type_str}', got '{actual}'"
+                    )
+                    continue  # skip further checks if type is already wrong
+
+            # Enum check
+            allowed_values = param_spec.get("enum")
+            if allowed_values is not None and arg_value not in allowed_values:
+                issues.append(
+                    f"Argument '{arg_name}' value {arg_value!r} not in allowed values: {allowed_values}"
+                )
+
+            # Numeric range checks (guard against bool, which is a subclass of int)
+            if isinstance(arg_value, (int, float)) and not isinstance(arg_value, bool):
+                minimum = param_spec.get("minimum")
+                maximum = param_spec.get("maximum")
+                if minimum is not None and arg_value < minimum:
+                    issues.append(f"Argument '{arg_name}' value {arg_value} is below minimum {minimum}")
+                if maximum is not None and arg_value > maximum:
+                    issues.append(f"Argument '{arg_name}' value {arg_value} exceeds maximum {maximum}")
 
         return len(issues) == 0, issues
 
@@ -87,11 +178,25 @@ class ToolCallScorer(BaseScorer):
         self,
         run_id: str,
         tool_call: Optional[dict] = None,
-        tool_calls: Optional[List[dict]] = None,
+        tool_calls: Optional[Union[List[dict], None]] = None,
         **kwargs,
     ) -> Eval:
-        calls = []
-        if tool_call:
+        """
+        Score one or more tool calls.
+
+        Args:
+            run_id:     The run identifier to attach the eval to.
+            tool_call:  A single tool call dict (any supported format).
+            tool_calls: A list of tool call dicts (any supported format).
+
+        Returns an Eval with:
+            score   = fraction of valid calls (1.0 = all valid)
+            verdict = "pass" if all valid, "fail" otherwise
+            notes   = human-readable summary of issues
+            meta    = structured breakdown for downstream analysis
+        """
+        calls: List[dict] = []
+        if tool_call is not None:  # explicit None check: {} is a valid (empty args) call
             calls.append(tool_call)
         if tool_calls:
             calls.extend(tool_calls)
@@ -115,8 +220,8 @@ class ToolCallScorer(BaseScorer):
             if is_valid:
                 valid_count += 1
             else:
-                call_name = call.get("name", "<unknown>")
-                all_issues.extend(f"[{call_name}] {issue}" for issue in issues)
+                normalized_name = normalize_tool_call(call).get("name", "<unknown>")
+                all_issues.extend(f"[{normalized_name}] {issue}" for issue in issues)
 
         total = len(calls)
         pass_rate = valid_count / total
@@ -136,17 +241,3 @@ class ToolCallScorer(BaseScorer):
             notes=notes,
             meta={"total_calls": total, "valid_calls": valid_count, "issues": all_issues},
         )
-
-
-def _levenshtein(a: str, b: str) -> int:
-    if len(a) < len(b):
-        a, b = b, a
-    if not b:
-        return len(a)
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a):
-        curr = [i + 1]
-        for j, cb in enumerate(b):
-            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (ca != cb)))
-        prev = curr
-    return prev[-1]
