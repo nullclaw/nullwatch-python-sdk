@@ -82,7 +82,7 @@ class RAGHallucinationScorer(BaseScorer):
         aggregate_score = hallucinated_chars / total_chars if total_chars > 0 else 0.0
 
         return HallucinationResult(
-            is_hallucinated=aggregate_score > self.fail_threshold,
+            is_hallucinated=bool(hallucinated_spans),
             score=aggregate_score,
             spans=hallucinated_spans,
             raw=raw,
