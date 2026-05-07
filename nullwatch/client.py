@@ -192,4 +192,9 @@ class NullwatchClient:
             raise
         finally:
             s.finish(status="error" if error_occurred else "ok")
-            self.ingest_span(s)
+            try:
+                self.ingest_span(s)
+            except Exception:
+                # Preserve the original user exception from inside the span body.
+                if not error_occurred:
+                    raise

@@ -248,7 +248,10 @@ class TestToolCallGroundingScorer:
     def test_operational_path_arg_does_not_fail_grounding(self):
         eval_ = self.scorer.score(
             run_id="run-1",
-            tool_call={"name": "file_read", "arguments": {"path": "/Users/nikolayivanov/project/README.md"}},
+            tool_call={
+                "name": "file_read",
+                "arguments": {"path": "/Users/nikolayivanov/project/README.md"},
+            },
             context="Read the local project README and summarize it.",
         )
         assert eval_.verdict == "pass"

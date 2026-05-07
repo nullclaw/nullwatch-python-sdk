@@ -172,9 +172,13 @@ def _validate_schema_value(value, schema: dict, path: str, issues: List[str]) ->
         min_items = schema.get("minItems")
         max_items = schema.get("maxItems")
         if min_items is not None and len(value) < min_items:
-            issues.append(f"{_format_value_label(path)} has {len(value)} item(s), below minimum {min_items}")
+            issues.append(
+                f"{_format_value_label(path)} has {len(value)} item(s), below minimum {min_items}"
+            )
         if max_items is not None and len(value) > max_items:
-            issues.append(f"{_format_value_label(path)} has {len(value)} item(s), exceeds maximum {max_items}")
+            issues.append(
+                f"{_format_value_label(path)} has {len(value)} item(s), exceeds maximum {max_items}"
+            )
 
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
@@ -195,7 +199,9 @@ def _validate_schema_value(value, schema: dict, path: str, issues: List[str]) ->
 
     allowed_values = schema.get("enum")
     if allowed_values is not None and value not in allowed_values:
-        issues.append(f"{_format_value_label(path)} value {value!r} not in allowed values: {allowed_values}")
+        issues.append(
+            f"{_format_value_label(path)} value {value!r} not in allowed values: {allowed_values}"
+        )
 
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum = schema.get("minimum")
@@ -218,7 +224,9 @@ def _validate_schema_value(value, schema: dict, path: str, issues: List[str]) ->
                 f"{_format_value_label(path)} length {len(value)} exceeds maximum {max_length}"
             )
         if pattern is not None and re.search(pattern, value) is None:
-            issues.append(f"{_format_value_label(path)} value {value!r} does not match pattern {pattern!r}")
+            issues.append(
+                f"{_format_value_label(path)} value {value!r} does not match pattern {pattern!r}"
+            )
 
 
 class ToolCallScorer(BaseScorer):

@@ -10,7 +10,7 @@ class _FakeDetector:
 
 
 class TestRAGHallucinationScorer:
-    def test_short_hallucinated_span_still_fails(self):
+    def test_short_hallucinated_span_can_pass_below_fail_threshold(self):
         scorer = RAGHallucinationScorer(threshold=0.5, fail_threshold=0.99)
         scorer._detector = _FakeDetector(
             [
@@ -26,13 +26,17 @@ class TestRAGHallucinationScorer:
         eval_ = scorer.score(
             run_id="run-1",
             contexts=["The Zig programming language was created by Andrew Kelley."],
-            question="Complete this sentence with the most likely facts: Zig was created by Andrew Kelley in the city of",
+            question=(
+                "Complete this sentence with the most likely facts: "
+                "Zig was created by Andrew Kelley in the city of"
+            ),
             answer="The Zig programming language was created by Andrew Kelley in the city of New York.",
         )
 
-        assert eval_.verdict == "fail"
+        assert eval_.verdict == "pass"
         assert eval_.meta["hallucinated_span_count"] == 1
         assert eval_.meta["hallucinated_char_ratio"] < 0.3
+        assert eval_.meta["passed_below_fail_threshold"] is True
         assert '"New"' in eval_.notes
 
     def test_no_hallucinated_spans_passes(self):
@@ -49,3 +53,30 @@ class TestRAGHallucinationScorer:
         assert eval_.verdict == "pass"
         assert eval_.score == 1.0
         assert eval_.meta["hallucinated_span_count"] == 0
+
+    def test_hallucinated_ratio_above_fail_threshold_fails(self):
+        scorer = RAGHallucinationScorer(threshold=0.5, fail_threshold=0.05)
+        scorer._detector = _FakeDetector(
+            [
+                {
+                    "text": "New York",
+                    "start": 72,
+                    "end": 80,
+                    "confidence": 0.95,
+                }
+            ]
+        )
+
+        eval_ = scorer.score(
+            run_id="run-1",
+            contexts=["The Zig programming language was created by Andrew Kelley."],
+            question=(
+                "Complete this sentence with the most likely facts: "
+                "Zig was created by Andrew Kelley in the city of"
+            ),
+            answer="The Zig programming language was created by Andrew Kelley in the city of New York.",
+        )
+
+        assert eval_.verdict == "fail"
+        assert eval_.meta["hallucinated_char_ratio"] >= 0.05
+        assert eval_.meta["passed_below_fail_threshold"] is False

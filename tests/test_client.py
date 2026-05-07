@@ -120,6 +120,18 @@ class TestNullwatchClient:
         _, body = _received[0]
         assert body["status"] == "error"
 
+    def test_span_context_manager_preserves_user_error_when_ingest_fails(self):
+        client = NullwatchClient(base_url="http://127.0.0.1:1")
+
+        def fail_ingest(_span):
+            raise ConnectionError("nullwatch unavailable")
+
+        client.ingest_span = fail_ingest
+
+        with pytest.raises(ValueError, match="boom"):
+            with client.span("run-2", "tool.call"):
+                raise ValueError("boom")
+
     def test_ingest_eval(self, mock_server):
         client = NullwatchClient(base_url=mock_server)
         e = Eval(run_id="run-1", eval_key="rag_hallucination", score=0.95, verdict="pass")

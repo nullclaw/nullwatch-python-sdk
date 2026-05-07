@@ -97,10 +97,16 @@ class RAGHallucinationScorer(BaseScorer):
         **kwargs,
     ) -> Eval:
         result = self.detect(contexts=contexts, question=question, answer=answer)
+        should_fail = result.score >= self.fail_threshold
 
         if result.spans:
             parts = [f'"{s.text.strip()}" (conf={s.confidence:.2f})' for s in result.spans]
-            notes = "Hallucinated spans detected: " + "; ".join(parts)
+            if should_fail:
+                notes = "Hallucinated spans detected: " + "; ".join(parts)
+            else:
+                notes = (
+                    "Hallucinated spans detected but below fail threshold: " + "; ".join(parts)
+                )
         else:
             notes = "No hallucinations detected — answer is grounded in context."
 
@@ -109,7 +115,7 @@ class RAGHallucinationScorer(BaseScorer):
             eval_key=self.eval_key,
             scorer=self.scorer_name,
             score=round(1.0 - result.score, 4),
-            verdict="fail" if result.is_hallucinated else "pass",
+            verdict="fail" if should_fail else "pass",
             dataset=self.dataset,
             notes=notes,
             meta={
@@ -117,5 +123,6 @@ class RAGHallucinationScorer(BaseScorer):
                 "hallucinated_char_ratio": round(result.score, 4),
                 "threshold": self.threshold,
                 "fail_threshold": self.fail_threshold,
+                "passed_below_fail_threshold": bool(result.spans) and not should_fail,
             },
         )

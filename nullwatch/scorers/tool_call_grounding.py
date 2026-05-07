@@ -146,7 +146,10 @@ def _number_is_grounded(value: Union[int, float], context: str) -> tuple[bool, s
         return True, "context contains no explicit numeric anchors"
 
     value_num = float(value)
-    if any(math.isclose(value_num, candidate, rel_tol=0.0, abs_tol=1e-9) for candidate in context_numbers):
+    if any(
+        math.isclose(value_num, candidate, rel_tol=0.0, abs_tol=1e-9)
+        for candidate in context_numbers
+    ):
         return True, f"numeric value {value} found in context"
 
     rendered = []
