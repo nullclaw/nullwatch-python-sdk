@@ -1,8 +1,7 @@
-.PHONY: install lint fmt test
+.PHONY: install lint fmt test build check-package
 
 install:
-	pip install -e ".[rag,dev]"
-	pip install ruff
+	pip install -r requirements-dev.txt
 
 lint:
 	ruff check nullwatch/ tests/
@@ -12,3 +11,10 @@ fmt:
 
 test:
 	pytest
+
+build:
+	python -m build
+
+check-package:
+	python -m build
+	python -m twine check dist/*
