@@ -9,6 +9,43 @@ from ..models import Eval
 from .base import BaseScorer
 from .tool_call import normalize_tool_call
 
+_OPERATIONAL_STRING_ARG_NAMES = {
+    "path",
+    "paths",
+    "cwd",
+    "directory",
+    "dir",
+    "root",
+    "workspace",
+    "workspace_dir",
+    "file",
+    "filename",
+    "url",
+    "uri",
+    "endpoint",
+    "base_url",
+    "command",
+    "cmd",
+    "program",
+    "executable",
+    "model",
+    "provider",
+}
+
+_OPERATIONAL_NUMERIC_ARG_NAMES = {
+    "max_results",
+    "offset",
+    "page",
+    "page_size",
+    "timeout",
+    "timeout_ms",
+    "retries",
+    "temperature",
+    "top_k",
+    "top_p",
+    "port",
+}
+
 
 def _flatten_args(args: dict, prefix: str = "") -> list[tuple[str, object]]:
     """Recursively extract scalar argument values with their dotted paths."""
@@ -36,6 +73,64 @@ def _extract_context_numbers(context: str) -> list[float]:
     """Extract numeric anchors from free-text context."""
     matches = re.findall(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?", context)
     return [float(m) for m in matches]
+
+
+def _leaf_arg_name(path: str) -> str:
+    normalized = re.sub(r"\[\d+\]", "", path)
+    return normalized.rsplit(".", 1)[-1].lower()
+
+
+def _looks_like_path(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    return (
+        stripped.startswith(("/", "~/", "./", "../"))
+        or ("\\" in stripped)
+        or ("/" in stripped and " " not in stripped and not stripped.startswith(("http://", "https://")))
+    )
+
+
+def _looks_like_url(value: str) -> bool:
+    return value.strip().startswith(("http://", "https://"))
+
+
+def _looks_like_shell_command(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped or "\n" in stripped:
+        return False
+    first = stripped.split()[0]
+    return first in {
+        "pwd",
+        "ls",
+        "cat",
+        "find",
+        "grep",
+        "rg",
+        "git",
+        "python",
+        "python3",
+        "pytest",
+        "zig",
+        "ollama",
+        "npm",
+        "pnpm",
+        "bun",
+        "cargo",
+        "make",
+        "echo",
+    }
+
+
+def _is_operational_string_arg(path: str, value: str) -> bool:
+    name = _leaf_arg_name(path)
+    if name in _OPERATIONAL_STRING_ARG_NAMES:
+        return True
+    return _looks_like_path(value) or _looks_like_url(value) or _looks_like_shell_command(value)
+
+
+def _is_operational_numeric_arg(path: str) -> bool:
+    return _leaf_arg_name(path) in _OPERATIONAL_NUMERIC_ARG_NAMES
 
 
 def _number_is_grounded(value: Union[int, float], context: str) -> tuple[bool, str]:
@@ -240,9 +335,13 @@ class ToolCallGroundingScorer(BaseScorer):
 
             for path, value in flat:
                 if isinstance(value, str):
+                    if _is_operational_string_arg(path, value):
+                        continue
                     grounded, reason = _keyword_is_grounded(value, self.context)
                     issue_prefix = f"Argument '{path}' value {value!r}"
                 else:
+                    if _is_operational_numeric_arg(path):
+                        continue
                     grounded, reason = _number_is_grounded(value, self.context)
                     issue_prefix = f"Argument '{path}' numeric value {value!r}"
                 if not grounded:

@@ -5,6 +5,8 @@ import pytest
 from nullwatch.scorers import ToolCallGroundingScorer
 from nullwatch.scorers.tool_call_grounding import (
     _flatten_args,
+    _is_operational_numeric_arg,
+    _is_operational_string_arg,
     _keyword_is_grounded,
     _number_is_grounded,
 )
@@ -98,6 +100,20 @@ class TestFlattenArgs:
 
     def test_empty_args(self):
         assert _flatten_args({}) == []
+
+
+class TestOperationalArgumentHeuristics:
+    def test_path_arg_is_treated_as_operational(self):
+        assert _is_operational_string_arg("path", "/Users/nikolayivanov/project/README.md") is True
+
+    def test_shell_command_is_treated_as_operational(self):
+        assert _is_operational_string_arg("command", "pwd") is True
+
+    def test_max_results_is_treated_as_operational_numeric(self):
+        assert _is_operational_numeric_arg("max_results") is True
+
+    def test_query_arg_is_not_treated_as_operational(self):
+        assert _is_operational_string_arg("query", "Python documentation") is False
 
 
 class TestToolCallGroundingScorer:
@@ -228,6 +244,39 @@ class TestToolCallGroundingScorer:
         )
         assert eval_.verdict == "fail"
         assert "numeric value 50" in eval_.notes
+
+    def test_operational_path_arg_does_not_fail_grounding(self):
+        eval_ = self.scorer.score(
+            run_id="run-1",
+            tool_call={"name": "file_read", "arguments": {"path": "/Users/nikolayivanov/project/README.md"}},
+            context="Read the local project README and summarize it.",
+        )
+        assert eval_.verdict == "pass"
+
+    def test_operational_command_args_do_not_fail_grounding(self):
+        eval_ = self.scorer.score(
+            run_id="run-1",
+            tool_call={
+                "name": "shell",
+                "arguments": {
+                    "command": "pwd",
+                    "cwd": "/Users/nikolayivanov/Desktop/coding/WB/WB_HACKATON",
+                },
+            },
+            context="Print the current working directory for this repository.",
+        )
+        assert eval_.verdict == "pass"
+
+    def test_operational_numeric_arg_does_not_fail_on_unrelated_context_numbers(self):
+        eval_ = self.scorer.score(
+            run_id="run-1",
+            tool_call={
+                "name": "search_docs",
+                "arguments": {"query": "Python documentation", "max_results": 1},
+            },
+            context="The repo was released in 2025. Search for Python documentation.",
+        )
+        assert eval_.verdict == "pass"
 
     def test_openai_format_supported(self):
         import json
