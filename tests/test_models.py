@@ -1,5 +1,6 @@
 """Tests for nullwatch data models."""
 
+import json
 import time
 
 from nullwatch.models import Eval, HallucinationResult, HallucinationSpan, Span
@@ -41,6 +42,20 @@ class TestSpan:
         d = s.to_dict()
         assert d["model"] == "gpt-4o"
 
+    def test_to_dict_serializes_meta_for_nullwatch_api(self):
+        s = Span(
+            run_id="run-1",
+            operation="tool.call",
+            tool_name="shell",
+            meta={"args": {"command": "pwd"}, "success": True},
+        )
+        d = s.to_dict()
+        assert "meta" not in d
+        assert json.loads(d["attributes_json"]) == {
+            "args": {"command": "pwd"},
+            "success": True,
+        }
+
 
 class TestEval:
     def test_basic(self):
@@ -55,6 +70,18 @@ class TestEval:
         d = e.to_dict()
         assert "dataset" not in d
         assert "notes" not in d
+
+    def test_to_dict_serializes_meta_for_nullwatch_api(self):
+        e = Eval(
+            run_id="run-1",
+            eval_key="tool_call_grounding",
+            score=1.0,
+            verdict="pass",
+            meta={"backend": "keyword", "issues": []},
+        )
+        d = e.to_dict()
+        assert "meta" not in d
+        assert json.loads(d["metadata_json"]) == {"backend": "keyword", "issues": []}
 
 
 class TestHallucinationResult:

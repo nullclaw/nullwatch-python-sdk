@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -52,7 +53,11 @@ class Span:
         return self
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        payload = {k: v for k, v in asdict(self).items() if v is not None}
+        meta = payload.pop("meta", None)
+        if meta is not None:
+            payload["attributes_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+        return payload
 
 
 @dataclass
@@ -68,7 +73,11 @@ class Eval:
     meta: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        payload = {k: v for k, v in asdict(self).items() if v is not None}
+        meta = payload.pop("meta", None)
+        if meta is not None:
+            payload["metadata_json"] = json.dumps(meta, ensure_ascii=False, sort_keys=True)
+        return payload
 
 
 @dataclass

@@ -90,16 +90,28 @@ class NullwatchClient:
         self,
         *,
         run_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
         source: Optional[str] = None,
+        operation: Optional[str] = None,
         status: Optional[str] = None,
+        model: Optional[str] = None,
         tool_name: Optional[str] = None,
+        task_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         limit: int = 50,
     ) -> List[dict]:
         params = {
             "run_id": run_id,
+            "trace_id": trace_id,
             "source": source,
+            "operation": operation,
             "status": status,
+            "model": model,
             "tool_name": tool_name,
+            "task_id": task_id,
+            "session_id": session_id,
+            "agent_id": agent_id,
             "limit": limit,
         }
         result = self._get("/v1/spans", params=params)
