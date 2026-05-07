@@ -10,7 +10,36 @@ class _FakeDetector:
 
 
 class TestRAGHallucinationScorer:
-    def test_short_hallucinated_span_can_pass_below_fail_threshold(self):
+    def test_short_hallucinated_span_fails_by_default(self):
+        scorer = RAGHallucinationScorer(threshold=0.5)
+        scorer._detector = _FakeDetector(
+            [
+                {
+                    "text": "Zurich",
+                    "start": 45,
+                    "end": 51,
+                    "confidence": 0.77,
+                }
+            ]
+        )
+
+        eval_ = scorer.score(
+            run_id="run-1",
+            contexts=["The Zig programming language was created by Andrew Kelley."],
+            question=(
+                "Complete this sentence with the most likely facts: "
+                "Zig was created by Andrew Kelley in the city of"
+            ),
+            answer="Zig was created by Andrew Kelley in the city of Zurich.",
+        )
+
+        assert eval_.verdict == "fail"
+        assert eval_.meta["hallucinated_span_count"] == 1
+        assert eval_.meta["hallucinated_char_ratio"] > 0.0
+        assert eval_.meta["passed_below_fail_threshold"] is False
+        assert '"Zurich"' in eval_.notes
+
+    def test_short_hallucinated_span_can_pass_with_relaxed_fail_threshold(self):
         scorer = RAGHallucinationScorer(threshold=0.5, fail_threshold=0.99)
         scorer._detector = _FakeDetector(
             [

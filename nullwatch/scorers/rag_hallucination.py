@@ -4,6 +4,7 @@ from ..models import Eval, HallucinationResult, HallucinationSpan
 from .base import BaseScorer
 
 DEFAULT_THRESHOLD = 0.5
+DEFAULT_FAIL_THRESHOLD = 0.3
 DEFAULT_MODEL = "KRLabsOrg/lettucedect-large-modernbert-en-v1"
 
 
@@ -21,7 +22,7 @@ class RAGHallucinationScorer(BaseScorer):
         threshold: float = DEFAULT_THRESHOLD,
         device: Optional[str] = None,
         dataset: Optional[str] = None,
-        fail_threshold: float = 0.3,
+        fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
     ):
         self.model_name = model
         self.threshold = threshold
@@ -97,7 +98,7 @@ class RAGHallucinationScorer(BaseScorer):
         **kwargs,
     ) -> Eval:
         result = self.detect(contexts=contexts, question=question, answer=answer)
-        should_fail = result.score >= self.fail_threshold
+        should_fail = bool(result.spans) and result.score >= self.fail_threshold
 
         if result.spans:
             parts = [f'"{s.text.strip()}" (conf={s.confidence:.2f})' for s in result.spans]
