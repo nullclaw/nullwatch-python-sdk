@@ -166,6 +166,8 @@ metadata    Structured details for downstream analysis.
 
 The client covers the common lifecycle for Python agents and RAG services:
 
+By default the scorer is strict: if it finds any unsupported answer span above the confidence threshold, the eval verdict is `fail`. You can relax this by passing a larger `fail_threshold` if you want to tolerate small unsupported fragments.
+
 ```python
 client = NullwatchClient()
 

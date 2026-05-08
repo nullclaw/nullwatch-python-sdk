@@ -50,6 +50,9 @@ all = [
     "twine>=5.0",
 ]
 
+[project.scripts]
+nullwatch-py = "nullwatch.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/nullclaw/nullwatch-python-sdk"
 Repository = "https://github.com/nullclaw/nullwatch-python-sdk"

@@ -52,6 +52,74 @@ class Span:
             self.duration_ms = self.ended_at_ms - self.started_at_ms
         return self
 
+    # ------------------------------------------------------------------
+    # Provider helpers — best-effort adapters, no provider SDK required
+    # ------------------------------------------------------------------
+
+    def record_tokens(self, *, input_tokens: Optional[int] = None, output_tokens: Optional[int] = None) -> "Span":
+        """Set token counts directly."""
+        if input_tokens is not None:
+            self.input_tokens = input_tokens
+        if output_tokens is not None:
+            self.output_tokens = output_tokens
+        return self
+
+    def record_cost(self, cost_usd: float) -> "Span":
+        """Set the cost in USD."""
+        self.cost_usd = cost_usd
+        return self
+
+    def record_openai_usage(self, response: Any) -> "Span":
+        """Extract token counts and cost from an OpenAI ChatCompletion response object or dict.
+
+        Works with ``openai.types.chat.ChatCompletion`` objects and plain dicts
+        returned by OpenAI-compatible APIs.  Missing fields are silently skipped.
+        """
+        usage = None
+        if isinstance(response, dict):
+            usage = response.get("usage", {})
+        else:
+            usage = getattr(response, "usage", None)
+
+        if usage is None:
+            return self
+
+        if isinstance(usage, dict):
+            self.input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens")
+            self.output_tokens = usage.get("completion_tokens") or usage.get("output_tokens")
+            cost = usage.get("total_cost") or usage.get("cost_usd")
+        else:
+            self.input_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+            self.output_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
+            cost = getattr(usage, "total_cost", None) or getattr(usage, "cost_usd", None)
+
+        if cost is not None:
+            self.cost_usd = float(cost)
+        return self
+
+    def record_anthropic_usage(self, response: Any) -> "Span":
+        """Extract token counts from an Anthropic ``Message`` response object or dict.
+
+        Works with ``anthropic.types.Message`` objects and plain dicts returned
+        by Anthropic-compatible APIs.  Missing fields are silently skipped.
+        """
+        usage = None
+        if isinstance(response, dict):
+            usage = response.get("usage", {})
+        else:
+            usage = getattr(response, "usage", None)
+
+        if usage is None:
+            return self
+
+        if isinstance(usage, dict):
+            self.input_tokens = usage.get("input_tokens")
+            self.output_tokens = usage.get("output_tokens")
+        else:
+            self.input_tokens = getattr(usage, "input_tokens", None)
+            self.output_tokens = getattr(usage, "output_tokens", None)
+        return self
+
     def to_dict(self) -> dict:
         payload = {k: v for k, v in asdict(self).items() if v is not None}
         meta = payload.pop("meta", None)
