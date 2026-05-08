@@ -196,14 +196,16 @@ class TestRoundTrip:
             pass
 
         # Step 3: Eval
-        client.ingest_eval(Eval(
-            run_id=run_id,
-            eval_key="rag_hallucination",
-            scorer="lettucedect-large-modernbert-en-v1",
-            score=0.92,
-            verdict="pass",
-            notes="No hallucinations detected",
-        ))
+        client.ingest_eval(
+            Eval(
+                run_id=run_id,
+                eval_key="rag_hallucination",
+                scorer="lettucedect-large-modernbert-en-v1",
+                score=0.92,
+                verdict="pass",
+                notes="No hallucinations detected",
+            )
+        )
 
         time.sleep(0.05)
 

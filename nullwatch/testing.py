@@ -22,8 +22,6 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from .models import Eval, RunSummary, Span
-
 
 class AssertionError(Exception):  # noqa: A001 — intentionally shadows builtins for clarity
     """Raised when a transport assertion fails."""
@@ -122,9 +120,7 @@ class MemoryTransport:
             evals = [e for e in evals if e.get("run_id") == run_id]
         failed = [e for e in evals if e.get("verdict") == "fail"]
         if failed:
-            notes = "; ".join(
-                f"{e.get('eval_key', '?')} ({e.get('notes', '')})" for e in failed
-            )
+            notes = "; ".join(f"{e.get('eval_key', '?')} ({e.get('notes', '')})" for e in failed)
             raise AssertionError(f"{len(failed)} failed eval(s): {notes}")
 
     def assert_span_recorded(

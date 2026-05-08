@@ -15,8 +15,7 @@ RUN_ID = f"ollama-test-{int(time.time())}"
 CONTEXT_DOCS = [
     "Python was created by Guido van Rossum and first released in 1991. "
     "It is known for its clear syntax and readability.",
-    "The Zig programming language was created by Andrew Kelley. "
-    "Zig 0.14.0 was released in March 2025.",
+    "The Zig programming language was created by Andrew Kelley. Zig 0.14.0 was released in March 2025.",
 ]
 
 TOOLS_SCHEMA = [
@@ -44,6 +43,7 @@ TOOLS_SCHEMA = [
 ]
 
 # Helpers
+
 
 def sep(title: str):
     print(f"\n{'─' * 60}")
@@ -101,7 +101,9 @@ def main():
 
     client = NullwatchClient(base_url=NULLWATCH_URL, raise_on_error=False)
     nullwatch_ok = client.is_alive()
-    print(f"  {'✅' if nullwatch_ok else '⚠️ '} nullwatch: {'running' if nullwatch_ok else 'not running (optional)'}")
+    print(
+        f"  {'✅' if nullwatch_ok else '⚠️ '} nullwatch: {'running' if nullwatch_ok else 'not running (optional)'}"
+    )
 
     # 2. Real RAG hallucination scoring
     sep("2. RAG hallucination detection")
@@ -122,7 +124,7 @@ def main():
     # Strip <think> blocks if model has chain-of-thought
     if "<think>" in answer:
         answer = answer.split("</think>")[-1].strip()
-    print(f"  Answer ({time.time()-t0:.1f}s): {answer[:200]}...")
+    print(f"  Answer ({time.time() - t0:.1f}s): {answer[:200]}...")
 
     rag_scorer = RAGHallucinationScorer()
     eval_rag = rag_scorer.score(

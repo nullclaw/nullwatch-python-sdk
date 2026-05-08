@@ -4,17 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nullwatch-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python SDK for nullwatch — observability and hallucination detection for AI agents"
 readme = "README.md"
-license = { text = "MIT" }
-authors = [{ name = "WB Hackathon Team" }]
+license = "MIT"
+authors = [
+    { name = "Viroslav", email = "nikolayivanov1999@gmail.com" },
+    { name = "Koldim2001", email = "koldim2001@gmail.com" },
+]
 requires-python = ">=3.10"
 keywords = ["nullwatch", "nullclaw", "observability", "AI agents", "hallucination detection", "RAG"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

@@ -15,11 +15,15 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .client import NullwatchClient
 
 
 def _make_client(base_url: Optional[str] = None) -> "NullwatchClient":
     from .client import NullwatchClient
+
     return NullwatchClient(base_url=base_url)
 
 
@@ -105,11 +109,7 @@ def cmd_ingest_eval(args: list[str]) -> int:
         eval_key=data.get("eval_key", "cli.eval"),
         score=float(data.get("score", 0.0)),
         verdict=data.get("verdict", "pass"),
-        **{
-            k: v
-            for k, v in data.items()
-            if k not in ("run_id", "eval_key", "score", "verdict")
-        },
+        **{k: v for k, v in data.items() if k not in ("run_id", "eval_key", "score", "verdict")},
     )
     try:
         result = client.ingest_eval(eval_)

@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import functools
 import inspect
@@ -54,9 +53,9 @@ class NullwatchClient:
         redact: Optional[Callable[[dict], dict]] = None,
         transport: Any = None,
     ):
-        self.base_url = (
-            base_url or os.environ.get("NULLWATCH_URL", "http://127.0.0.1:7710")
-        ).rstrip("/")
+        self.base_url = (base_url or os.environ.get("NULLWATCH_URL", "http://127.0.0.1:7710")).rstrip(
+            "/"
+        )
         self.api_key = api_key or os.environ.get("NULLWATCH_API_KEY")
         self.timeout = timeout
         self.raise_on_error = raise_on_error
@@ -372,6 +371,7 @@ class NullwatchClient:
                             rid = args[idx]
                 if rid is None:
                     from .models import _new_id
+
                     rid = _new_id("run-")
 
                 with self.span(
@@ -418,6 +418,7 @@ class NullwatchClient:
                             rid = args[idx]
                 if rid is None:
                     from .models import _new_id
+
                     rid = _new_id("run-")
 
                 s = Span(

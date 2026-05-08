@@ -14,6 +14,7 @@ RUN_ID = f"live-demo-{int(time.time())}"
 
 # helpers
 
+
 def check_ollama() -> bool:
     try:
         with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=3) as r:
@@ -41,14 +42,14 @@ def ollama_chat(messages: list[dict], tools: list[dict] | None = None) -> dict:
 def section(title: str):
     print(f"\n{'═' * 60}")
     print(f"  {title}")
-    print('═' * 60)
+    print("═" * 60)
+
 
 # RAG documents
 CONTEXT_DOCS = [
     "Python was created by Guido van Rossum and first released in 1991. "
     "It is known for its clear syntax and readability. "
     "Python 3.0 was released in 2008 and broke backward compatibility with Python 2.",
-
     "The Zig programming language was created by Andrew Kelley. "
     "Zig 0.14.0 was released in March 2025. "
     "Zig emphasizes simplicity, performance, and explicit memory management.",
@@ -64,7 +65,12 @@ TOOLS_SCHEMA = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "description": "Max results to return", "minimum": 1, "maximum": 20},
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max results to return",
+                        "minimum": 1,
+                        "maximum": 20,
+                    },
                 },
                 "required": ["query"],
             },
@@ -90,6 +96,7 @@ TOOLS_SCHEMA = [
     },
 ]
 
+
 def main():
     # preflight checks
     print("🔍 Checking services...")
@@ -99,7 +106,9 @@ def main():
 
     client = NullwatchClient(base_url=NULLWATCH_URL, raise_on_error=False)
     nullwatch_ok = client.is_alive()
-    print(f"  nullwatch: {'✅ running' if nullwatch_ok else '⚠️  not running (spans/evals will be skipped)'}")
+    print(
+        f"  nullwatch: {'✅ running' if nullwatch_ok else '⚠️  not running (spans/evals will be skipped)'}"
+    )
 
     if not ollama_ok:
         print("\n❌ Ollama must be running. Start it with: ollama serve")
@@ -207,7 +216,9 @@ Call the appropriate tool. Return ONLY the tool call, no explanation."""
         )
 
         print(f"\n  Verdict: {'✅ PASS' if eval_tool.verdict == 'pass' else '❌ FAIL'}")
-        print(f"  Score:   {eval_tool.score:.3f} ({eval_tool.meta['valid_calls']}/{eval_tool.meta['total_calls']} valid)")
+        print(
+            f"  Score:   {eval_tool.score:.3f} ({eval_tool.meta['valid_calls']}/{eval_tool.meta['total_calls']} valid)"
+        )
         if eval_tool.meta["issues"]:
             print(f"  Issues:")
             for issue in eval_tool.meta["issues"]:
@@ -257,7 +268,7 @@ Call the appropriate tool. Return ONLY the tool call, no explanation."""
 
     print(f"\n{'═' * 60}")
     print(f"  Done! Run ID: {RUN_ID}")
-    print('═' * 60)
+    print("═" * 60)
 
 
 if __name__ == "__main__":

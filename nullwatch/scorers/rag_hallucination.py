@@ -105,9 +105,7 @@ class RAGHallucinationScorer(BaseScorer):
             if should_fail:
                 notes = "Hallucinated spans detected: " + "; ".join(parts)
             else:
-                notes = (
-                    "Hallucinated spans detected but below fail threshold: " + "; ".join(parts)
-                )
+                notes = "Hallucinated spans detected but below fail threshold: " + "; ".join(parts)
         else:
             notes = "No hallucinations detected — answer is grounded in context."
 

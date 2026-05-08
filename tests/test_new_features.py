@@ -3,8 +3,8 @@ provider helpers, MemoryTransport, and CLI."""
 
 import asyncio
 import json
-import os
 import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
@@ -12,11 +12,7 @@ from nullwatch import Eval, MemoryTransport, NullwatchClient, Span
 from nullwatch.testing import AssertionError as NWAssertionError
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def transport():
     return MemoryTransport()
@@ -27,11 +23,7 @@ def client(transport):
     return NullwatchClient(transport=transport)
 
 
-# ---------------------------------------------------------------------------
 # MemoryTransport
-# ---------------------------------------------------------------------------
-
-
 class TestMemoryTransport:
     def test_captures_span(self, client, transport):
         with client.span("run-1", "llm.call", model="gpt-4o"):
@@ -40,9 +32,7 @@ class TestMemoryTransport:
         assert transport.spans[0]["operation"] == "llm.call"
 
     def test_captures_eval(self, client, transport):
-        client.ingest_eval(
-            Eval(run_id="run-1", eval_key="quality", score=0.9, verdict="pass")
-        )
+        client.ingest_eval(Eval(run_id="run-1", eval_key="quality", score=0.9, verdict="pass"))
         assert len(transport.evals) == 1
         assert transport.evals[0]["eval_key"] == "quality"
 
@@ -68,11 +58,7 @@ class TestMemoryTransport:
         assert "version" in caps
 
 
-# ---------------------------------------------------------------------------
 # Assert helpers
-# ---------------------------------------------------------------------------
-
-
 class TestAssertHelpers:
     def test_assert_span_recorded_pass(self, client, transport):
         with client.span("run-1", "tool.call", tool_name="search"):
@@ -109,17 +95,19 @@ class TestAssertHelpers:
 
     def test_assert_eval_recorded_by_scorer(self, client, transport):
         client.ingest_eval(
-            Eval(run_id="r", eval_key="rag_hallucination", score=0.9, verdict="pass", scorer="lettucedetect")
+            Eval(
+                run_id="r",
+                eval_key="rag_hallucination",
+                score=0.9,
+                verdict="pass",
+                scorer="lettucedetect",
+            )
         )
         eval_ = transport.assert_eval_recorded(scorer="lettucedetect")
         assert eval_["eval_key"] == "rag_hallucination"
 
 
-# ---------------------------------------------------------------------------
 # Env vars
-# ---------------------------------------------------------------------------
-
-
 class TestEnvVars:
     def test_base_url_from_env(self, monkeypatch):
         monkeypatch.setenv("NULLWATCH_URL", "http://custom-host:9999")
@@ -139,18 +127,10 @@ class TestEnvVars:
         assert client.api_key == "explicit-key"
 
 
-# ---------------------------------------------------------------------------
 # Authorization header
-# ---------------------------------------------------------------------------
-
-
 class TestApiKey:
     def test_auth_header_in_request(self, monkeypatch):
         """When api_key is set, requests must include an Authorization header."""
-        import json
-        import threading
-        from http.server import BaseHTTPRequestHandler, HTTPServer
-
         received_headers = []
 
         class Handler(BaseHTTPRequestHandler):
@@ -187,11 +167,7 @@ class TestApiKey:
             server.shutdown()
 
 
-# ---------------------------------------------------------------------------
 # Redact hook
-# ---------------------------------------------------------------------------
-
-
 class TestRedact:
     def test_redact_applied_to_span(self, transport):
         def scrub(payload):
@@ -206,11 +182,7 @@ class TestRedact:
         assert transport.spans[0]["model"] == "[REDACTED]"
 
 
-# ---------------------------------------------------------------------------
 # Buffered mode
-# ---------------------------------------------------------------------------
-
-
 class TestBufferedMode:
     def test_spans_not_sent_immediately(self, transport):
         client = NullwatchClient(transport=transport, buffered=True, flush_at=100)
@@ -249,11 +221,7 @@ class TestBufferedMode:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
 # Decorator: @client.trace
-# ---------------------------------------------------------------------------
-
-
 class TestTraceDecorator:
     def test_trace_records_span(self, client, transport):
         @client.trace("retriever.search")
@@ -294,11 +262,7 @@ class TestTraceDecorator:
         assert transport.spans[0]["run_id"].startswith("run-")
 
 
-# ---------------------------------------------------------------------------
 # Decorator: @client.atrace
-# ---------------------------------------------------------------------------
-
-
 class TestATraceDecorator:
     def test_atrace_records_span(self, client, transport):
         @client.atrace("async.step")
@@ -320,11 +284,7 @@ class TestATraceDecorator:
         assert span["status"] == "error"
 
 
-# ---------------------------------------------------------------------------
 # Provider helpers on Span
-# ---------------------------------------------------------------------------
-
-
 class TestProviderHelpers:
     def test_record_tokens(self):
         s = Span(run_id="r", operation="llm.call")
@@ -389,16 +349,9 @@ class TestProviderHelpers:
         assert result is s  # returns self
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
-
-
 class TestCLI:
     def test_ping_ok(self, capsys, transport):
-        from nullwatch.cli import cmd_ping
-
-        # We can't easily inject transport into cmd_ping, so test help/main routing
         from nullwatch import cli
 
         # Test main --help exits 0
@@ -450,6 +403,7 @@ class TestCLI:
 
         # Patch NullwatchClient to use our transport
         import nullwatch.cli as cli_module
+
         original = cli_module._make_client
 
         def patched_make_client(base_url=None):
@@ -457,12 +411,8 @@ class TestCLI:
 
         cli_module._make_client = patched_make_client
         try:
-            # Also patch inside cmd_ingest_span
-            import nullwatch.cli as m
             from nullwatch.cli import cmd_ingest_span
 
-            # Use monkeypatching via importlib hack — simpler: just call with real server
-            # For now just test it doesn't crash on a valid file
             result = cmd_ingest_span([str(f)])
             # May return 1 if no server is running — that's OK in unit test
             assert result in (0, 1)

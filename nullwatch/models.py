@@ -56,7 +56,9 @@ class Span:
     # Provider helpers — best-effort adapters, no provider SDK required
     # ------------------------------------------------------------------
 
-    def record_tokens(self, *, input_tokens: Optional[int] = None, output_tokens: Optional[int] = None) -> "Span":
+    def record_tokens(
+        self, *, input_tokens: Optional[int] = None, output_tokens: Optional[int] = None
+    ) -> "Span":
         """Set token counts directly."""
         if input_tokens is not None:
             self.input_tokens = input_tokens
@@ -89,8 +91,12 @@ class Span:
             self.output_tokens = usage.get("completion_tokens") or usage.get("output_tokens")
             cost = usage.get("total_cost") or usage.get("cost_usd")
         else:
-            self.input_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
-            self.output_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
+            self.input_tokens = getattr(usage, "prompt_tokens", None) or getattr(
+                usage, "input_tokens", None
+            )
+            self.output_tokens = getattr(usage, "completion_tokens", None) or getattr(
+                usage, "output_tokens", None
+            )
             cost = getattr(usage, "total_cost", None) or getattr(usage, "cost_usd", None)
 
         if cost is not None:
