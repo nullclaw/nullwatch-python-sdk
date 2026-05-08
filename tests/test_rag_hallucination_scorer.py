@@ -11,7 +11,9 @@ class _FakeDetector:
 
 class TestRAGHallucinationScorer:
     def test_short_hallucinated_span_fails_by_default(self):
-        scorer = RAGHallucinationScorer(threshold=0.5)
+        # fail_threshold=0.05 means even a small hallucinated span (>5% of answer) triggers fail.
+        # "Zurich" = 6 chars out of ~54 total ≈ 11% > 0.05 → verdict "fail".
+        scorer = RAGHallucinationScorer(threshold=0.5, fail_threshold=0.05)
         scorer._detector = _FakeDetector(
             [
                 {
