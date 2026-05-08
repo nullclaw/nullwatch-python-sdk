@@ -166,6 +166,8 @@ metadata    Structured details for downstream analysis.
 
 The client covers the common lifecycle for Python agents and RAG services:
 
+By default the scorer is strict: if it finds any unsupported answer span above the confidence threshold, the eval verdict is `fail`. You can relax this by passing a larger `fail_threshold` if you want to tolerate small unsupported fragments.
+
 ```python
 client = NullwatchClient()
 
@@ -295,6 +297,11 @@ fields, malformed JSON arguments, enum violations, and wrong argument types. It
 does not require an ML model.
 
 Compact Nullwatch schema:
+
+You can pass either:
+
+- the compact `nullwatch-py` schema format shown below, or
+- the same OpenAI-style `tools=[...]` JSON schema you send to the model
 
 ```python
 from nullwatch.scorers import ToolCallScorer
